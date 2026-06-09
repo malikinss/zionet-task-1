@@ -32,9 +32,6 @@ from src.tools.weather import WeatherTool
 from src.tools.calculator import CalculatorTool
 from src.tools.time_tool import TimeTool
 
-DEFAULT_TOOLS: list[BaseTool] = [WeatherTool(), CalculatorTool(), TimeTool()]
-"""Default tool instances registered when no tools are provided."""
-
 
 class ToolRegistry:
     """A registry that stores, dispatches, and serializes tools.
@@ -69,7 +66,22 @@ class ToolRegistry:
         ```
         """
         self._tools: dict[str, BaseTool] = {}
-        self._register_init_tools(tools or DEFAULT_TOOLS)
+        self._register_init_tools(tools or self._default_tools())
+
+    def _default_tools(self):
+        """Returns the default list of tool instances for the registry.
+
+        Returns:
+            A list containing one instance each of `WeatherTool`,
+            `CalculatorTool`, and `TimeTool`.
+
+        Example:
+        ```
+        self._default_tools()
+        # [WeatherTool(), CalculatorTool(), TimeTool()]
+        ```
+        """
+        return [WeatherTool(), CalculatorTool(), TimeTool()]
 
     def _register_init_tools(self, tools: list[BaseTool]):
         """Registers a list of tools by iterating and calling register.
