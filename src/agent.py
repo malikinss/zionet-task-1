@@ -43,6 +43,7 @@ from src.llm.groq_client import GroqClient
 from src.tools.registry import ToolRegistry
 from src.schemas import AgentResponse
 from src.logger import AppLogger
+from src.prompts import SYSTEM_PROMPT
 
 LOGGER_NAME: str = "agent"
 """Default logger name used when no AppLogger is provided."""
@@ -141,20 +142,29 @@ class Agent:
     def _init_history(self, user_prompt: str) -> list:
         """Creates the initial conversation history from the user prompt.
 
+        Prepends a system prompt entry before the user message to
+        establish the agent's behavior and context.
+
         Args:
             user_prompt: The user's input message.
 
         Returns:
-            A single-element list containing the user message as a
-            serialized `HistoryEntry` dict.
+            A two-element list containing the system prompt and the
+            user message as serialized HistoryEntry dicts.
 
         Example:
-        ```
-        self._init_history("Hello")
-        # [{"role": "user", "content": "Hello"}]
-        ```
+            ::
+
+                self._init_history("Hello")
+                # [
+                #     {"role": "system", "content": "<SYSTEM_PROMPT>"},
+                #     {"role": "user", "content": "Hello"}
+                # ]
         """
-        return [HistoryEntry(role="user", content=user_prompt).to_dict()]
+        return [
+            HistoryEntry(role="system", content=SYSTEM_PROMPT).to_dict(),
+            HistoryEntry(role="user", content=user_prompt).to_dict(),
+        ]
 
     def _call_llm(self, history: list, tools: list) -> LLMResponse:
         """Calls the LLM with the current history and tool schema.
