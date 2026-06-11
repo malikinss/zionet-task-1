@@ -15,7 +15,12 @@ Example:
 """
 
 import json
+import sys
 from src.agent import Agent
+from src.logger import AppLogger
+
+logger = AppLogger("main")
+"""Module-level logger used to report fatal errors in main."""
 
 
 def main():
@@ -23,13 +28,16 @@ def main():
 
     Instantiates `Agent` with default LLM, registry, and logger, then
     calls run with a prompt covering weather, calculator, and time
-    tools. Prints the final `AgentResponse` as indented JSON. Silently
-    suppresses any exceptions.
+    tools. Prints the final `AgentResponse` as indented JSON. Logs the
+    error and exits with code 1 on any unhandled exception.
+
+    Raises:
+        SystemExit: With exit code 1 if the agent raises an exception.
 
     Example:
     ```
     main()
-    # 📊 Final JSON Response:
+    # Final JSON Response:
     # {
     #   "answer": "...",
     #   "tools_used": ["get_weather", "calculator", "get_current_time"],
@@ -37,18 +45,18 @@ def main():
     # }
     ```
     """
-    agent = Agent()
-
     try:
+        agent = Agent()
         result = agent.run(
             "What is the weather in London and Tokyo? "
             "Also, what is 25 * 48? "
             "And what is the current time?"
         )
-        print("\n📊 Final JSON Response:")
+        print("Final JSON Response:")
         print(json.dumps(result.model_dump(), indent=2))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.agent.error(f"Fatal error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

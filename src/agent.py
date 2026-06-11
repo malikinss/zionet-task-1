@@ -183,9 +183,6 @@ class Agent:
     def _call_llm(self, history: list, tools: list) -> LLMResponse:
         """Calls the LLM with the current history and tool schema.
 
-        Logs the error via the agent logger and re-raises if the
-        LLM call fails.
-
         Args:
             history: Current conversation history as a list of dicts.
             tools: List of tool schema dicts to pass to the LLM.
@@ -193,20 +190,13 @@ class Agent:
         Returns:
             An `LLMResponse` containing the model's text and tool calls.
 
-        Raises:
-            Exception: Any exception raised by the LLM client.
-
         Example:
         ```
         response = self._call_llm(history, tools)
         print(response.content)
         ```
         """
-        try:
-            return self.llm.generate(history, tools)
-        except Exception as e:
-            self.logger.agent.error(str(e))
-            raise
+        return self.llm.generate(history, tools)
 
     def _build_assistant_entry(self, response: LLMResponse) -> HistoryEntry:
         """Builds a HistoryEntry representing the assistant's tool call turn.
