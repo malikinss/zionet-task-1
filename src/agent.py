@@ -46,7 +46,14 @@ from src.logger import AppLogger
 from src.prompts import SYSTEM_PROMPT
 
 LOGGER_NAME: str = "agent"
-"""Default logger name used when no AppLogger is provided."""
+"""Default logger name used when no `AppLogger` is provided."""
+
+MAX_ITERATIONS: int = 10
+"""Maximum number of LLM iterations allowed per agent run.
+
+If the agent has not produced a final text answer within this many
+iterations, a `RuntimeError` is raised.
+"""
 
 load_dotenv()
 
@@ -106,7 +113,7 @@ class Agent:
 
         Initializes conversation history, then repeatedly calls the
         LLM and processes tool calls until a final text answer is
-        returned.
+        returned or `MAX_ITERATIONS` is reached.
 
         Args:
             user_prompt: The user's input message to the agent.
@@ -114,6 +121,10 @@ class Agent:
         Returns:
             An AgentResponse containing the final answer, list of
             tool names used, and total iteration count.
+
+        Raises:
+            RuntimeError: If the agent exceeds `MAX_ITERATIONS` without
+                producing a final text answer.
 
         Example:
         ```
@@ -129,7 +140,7 @@ class Agent:
         tools_used: list[str] = []
         iterations = 0
 
-        while True:
+        while iterations < MAX_ITERATIONS:
             iterations += 1
             self.logger.agent.iteration(iterations)
             response = self._call_llm(history, tools)
@@ -138,6 +149,9 @@ class Agent:
                 return self._build_response(response, tools_used, iterations)
 
             self._process_tool_calls(response, history, tools_used)
+
+        self.logger.agent.error(f"Max iterations ({MAX_ITERATIONS}) reached")
+        raise RuntimeError(f"Agent exceeded max iterations: {MAX_ITERATIONS}")
 
     def _init_history(self, user_prompt: str) -> list:
         """Creates the initial conversation history from the user prompt.
@@ -153,13 +167,13 @@ class Agent:
             user message as serialized HistoryEntry dicts.
 
         Example:
-            ::
-
-                self._init_history("Hello")
-                # [
-                #     {"role": "system", "content": "<SYSTEM_PROMPT>"},
-                #     {"role": "user", "content": "Hello"}
-                # ]
+        ```
+        self._init_history("Hello")
+        # [
+        #     {"role": "system", "content": "<SYSTEM_PROMPT>"},
+        #     {"role": "user", "content": "Hello"}
+        # ]
+        ```
         """
         return [
             HistoryEntry(role="system", content=SYSTEM_PROMPT).to_dict(),
