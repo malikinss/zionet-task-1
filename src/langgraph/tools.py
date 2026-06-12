@@ -21,7 +21,7 @@ Example:
 """
 
 from langchain_core.tools import tool
-from src.tools import BaseTool
+from langchain_core.tools import BaseTool as LangChainBaseTool
 from src.tools.weather import WeatherTool
 from src.tools.calculator import CalculatorTool
 from src.tools.time_tool import TimeTool
@@ -57,5 +57,5 @@ def get_current_time() -> str:
 TOOLS: list = [get_weather, calculator, get_current_time]
 """All registered LangChain tools available to the agent graph."""
 
-TOOL_MAP: dict[str, BaseTool] = {t.name: t for t in TOOLS}
+TOOL_MAP: dict[str, LangChainBaseTool] = {t.name: t for t in TOOLS}
 """Mapping from tool name to `LangChain` tool instance."""
