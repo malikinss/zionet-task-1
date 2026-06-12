@@ -272,9 +272,11 @@ class Agent:
         self, response: LLMResponse, tools_used: list, iterations: int
     ) -> AgentResponse:
         """Builds the final `AgentResponse` from the LLM's text answer.
-
-        Logs the final answer and constructs an `AgentResponse` with
-        the answer text, tools used, and iteration count.
+        Attempts to parse the response content as a JSON-encoded
+        `AgentResponse`.
+        If parsing succeeds, logs the final answer and returns a response with
+        the parsed answer.
+        Falls back to using the raw content string if parsing fails.
 
         Args:
             response: The `LLMResponse` containing the final text answer.
@@ -287,15 +289,29 @@ class Agent:
 
         Example:
         ```
+        # With valid JSON content from the LLM:
         result = self._build_response(response, ["calculator"], 2)
         result.answer      # "2 + 2 = 4"
         result.tools_used  # ["calculator"]
         result.iterations  # 2
+
+        # With unparseable content, falls back to raw string:
+        result = self._build_response(response, [], 1)
+        result.answer      # "<raw LLM output>"
         ```
         """
-        self.logger.agent.final_answer(response.content or "")
-        return AgentResponse(
-            answer=response.content or "",
-            tools_used=tools_used,
-            iterations=iterations,
-        )
+        content = response.content or ""
+        try:
+            parsed = AgentResponse.model_validate_json(content)
+            self.logger.agent.final_answer(parsed.answer)
+            return AgentResponse(
+                answer=parsed.answer,
+                tools_used=tools_used,
+                iterations=iterations,
+            )
+        except Exception:
+            return AgentResponse(
+                answer=content,
+                tools_used=tools_used,
+                iterations=iterations,
+            )
