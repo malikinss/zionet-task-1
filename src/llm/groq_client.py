@@ -44,8 +44,8 @@ from src.llm.dto import LLMResponse, ToolCall
 
 load_dotenv()
 
-DEFAULT_MODEL: str = "llama3-groq-70b-8192-tool-use-preview"
-"""Fallback Groq model name used when GROQ_MODEL_NAME is not set."""
+DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
+"""Fallback Groq model name used when `GROQ_MODEL_NAME` is not set."""
 
 MODEL: str = os.getenv("GROQ_MODEL_NAME", DEFAULT_MODEL)
 """Active Groq model name, resolved from the environment at import time."""
@@ -55,8 +55,8 @@ class GroqClient(BaseLLMClient):
     """LLM client that wraps the Groq chat completions API.
 
     Translates the generic `history` and `schema` format used by
-    BaseLLMClient into Groq-compatible API calls, and parses the
-    response back into a unified LLMResponse DTO.
+    `BaseLLMClient` into Groq-compatible API calls, and parses the
+    response back into a unified `LLMResponse` DTO.
 
     Attributes:
         model: Name of the Groq model to use for generation.

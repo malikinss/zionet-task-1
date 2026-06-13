@@ -4,8 +4,9 @@
 
 This module provides `WeatherTool`, a `BaseTool` implementation that
 fetches current weather data for a given city from the WeatherAPI
-service. The API key is read from the `WEATHER_API_KEY` environment
-variable.
+service.
+
+Falls back to `MOCK_WEATHER` if `WEATHER_API_KEY` is not set.
 
 Example:
     Basic usage:
@@ -25,16 +26,29 @@ import requests
 from src.tools.base import BaseTool
 from src.tools.schema import ToolSchema, PropertySchema
 
+MOCK_WEATHER: dict[str, str] = {
+    "london": "London, UK: Cloudy, 15.0°C, humidity 80%, wind 20.0 kph",
+    "tokyo": "Tokyo, Japan: Sunny, 22.0°C, humidity 60%, wind 10.0 kph",
+    "new york": "New York, USA: Clear, 18.0°C, humidity 55%, wind 15.0 kph",
+}
+"""Fallback weather responses keyed by lowercase city name.
+
+Used when `WEATHER_API_KEY` is not set.
+
+Cities not present in this mapping receive a generic sunny response with
+a `(mocked)` suffix.
+"""
+
 
 class WeatherTool(BaseTool):
-    """A tool that fetches current weather data from WeatherAPI.
+    """A tool that fetches current weather data from `WeatherAPI`.
 
-    Calls the WeatherAPI current weather endpoint and returns a
+    Calls the `WeatherAPI` current weather endpoint and returns a
     human-readable summary of conditions for the requested city.
-    Requires the `WEATHER_API_KEY` environment variable to be set.
+    Falls back to `MOCK_WEATHER` if `WEATHER_API_KEY` is not set.
 
     Attributes:
-        BASE_URL: WeatherAPI endpoint for current weather data.
+        BASE_URL: `WeatherAPI` endpoint URL for current weather queries.
 
     Example:
     ```
@@ -80,7 +94,7 @@ class WeatherTool(BaseTool):
         """Returns the parameter schema expected by this tool.
 
         Returns:
-            A ToolSchema requiring a single string property `city`.
+            A `ToolSchema` requiring a single string property `city`.
 
         Example:
         ```
@@ -95,32 +109,72 @@ class WeatherTool(BaseTool):
         )
 
     def run(self, city: str) -> str:
-        """Fetches and formats current weather data for the given city.
+        """Returns current weather for the given city.
 
-        Reads the API key from the `WEATHER_API_KEY` environment variable,
-        calls the WeatherAPI current weather endpoint, and returns a
-        formatted summary string. Returns an error message instead of
-        raising if the request fails.
+        Uses the live `WeatherAPI` if `WEATHER_API_KEY` is set, otherwise
+        falls back to `MOCK_WEATHER`.
 
         Args:
-            city: Name of the city to fetch weather for,
-                e.g. `"London"` or `"New York"`.
+            city: Name of the city to fetch weather for.
 
         Returns:
-            A formatted string of the form
-            `"<city>, <country>: <condition>,
-            <temp>°C, humidity <h>%, wind <w> kph"`
-            on success, or `"Weather API error: <reason>"` on failure.
+            A formatted weather string or an error message if the
+            API request fails.
 
         Example:
         ```
-        tool.run("Paris")
-        # "Paris, France: Clear, 22°C, humidity 55%, wind 12.6 kph"
-        tool.run("__invalid__")
-        # "Weather API error: 400 Client Error: Bad Request"
+        tool.run("London")
+        # "London, UK: Cloudy, 15.0°C, humidity 80%, wind 20.0 kph"
         ```
         """
         api_key = os.getenv("WEATHER_API_KEY")
+        if not api_key:
+            return self._mock(city)
+        return self._fetch(city, api_key)
+
+    def _mock(self, city: str) -> str:
+        """Returns a mocked weather string for the given city.
+
+        Looks up the city in `MOCK_WEATHER` by lowercase name. Returns
+        a generic sunny response if the city is not found.
+
+        Args:
+            city: Name of the city to look up.
+
+        Returns:
+            A weather string from `MOCK_WEATHER`, or a generic fallback
+            with a `(mocked)` suffix.
+
+        Example:
+        ```
+        self._mock("london")
+        # "London, UK: Cloudy, 15.0°C, humidity 80%, wind 20.0 kph"
+        self._mock("Paris")
+        # "Paris: Sunny, 20.0°C, humidity 60%, wind 10.0 kph (mocked)"
+        ```
+        """
+        return MOCK_WEATHER.get(
+            city.lower(),
+            f"{city}: Sunny, 20.0°C, humidity 60%, wind 10.0 kph (mocked)"
+        )
+
+    def _fetch(self, city: str, api_key: str) -> str:
+        """Fetches live weather data from `WeatherAPI` for the given city.
+
+        Args:
+            city: Name of the city to fetch weather for.
+            api_key: `WeatherAPI` authentication key.
+
+        Returns:
+            A formatted weather string on success, or an error message
+            if the request fails.
+
+        Example:
+        ```
+        self._fetch("Berlin", "my_api_key")
+        # "Berlin, Germany: Partly cloudy, 18°C, humidity 72%, wind 14.4 kph"
+        ```
+        """
         try:
             response = requests.get(
                 self.BASE_URL,
@@ -128,16 +182,36 @@ class WeatherTool(BaseTool):
                 timeout=5,
             )
             response.raise_for_status()
-            data = response.json()
-            location = data["location"]["name"]
-            country = data["location"]["country"]
-            temp_c = data["current"]["temp_c"]
-            condition = data["current"]["condition"]["text"]
-            humidity = data["current"]["humidity"]
-            wind_kph = data["current"]["wind_kph"]
-            return (
-                f"{location}, {country}: {condition}, "
-                f"{temp_c}°C, humidity {humidity}%, wind {wind_kph} kph"
-            )
+            return self._format_result_string(response)
         except requests.RequestException as e:
             return f"Weather API error: {e}"
+
+    def _format_result_string(self, response: requests.Response) -> str:
+        """Parses a `WeatherAPI` response and formats it as a readable string.
+
+        Args:
+            response: A successful `requests.Response` object from
+                the `WeatherAPI` current weather endpoint.
+
+        Returns:
+            A string of the form
+            `"<city>, <country>: <condition>,
+            <temp>°C, humidity <h>%, wind <w> kph"`.
+
+        Example:
+        ```
+        self._format_result_string(response)
+        # "Rome, Italy: Clear, 24°C, humidity 50%, wind 8.0 kph"
+        ```
+        """
+        data = response.json()
+        location = data["location"]["name"]
+        country = data["location"]["country"]
+        temp_c = data["current"]["temp_c"]
+        condition = data["current"]["condition"]["text"]
+        humidity = data["current"]["humidity"]
+        wind_kph = data["current"]["wind_kph"]
+        return (
+            f"{location}, {country}: {condition}, "
+            f"{temp_c}°C, humidity {humidity}%, wind {wind_kph} kph"
+        )

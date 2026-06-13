@@ -43,9 +43,17 @@ from src.llm.groq_client import GroqClient
 from src.tools.registry import ToolRegistry
 from src.schemas import AgentResponse
 from src.logger import AppLogger
+from src.prompts import SYSTEM_PROMPT
 
 LOGGER_NAME: str = "agent"
-"""Default logger name used when no AppLogger is provided."""
+"""Default logger name used when no `AppLogger` is provided."""
+
+MAX_ITERATIONS: int = 10
+"""Maximum number of LLM iterations allowed per agent run.
+
+If the agent has not produced a final text answer within this many
+iterations, a `RuntimeError` is raised.
+"""
 
 load_dotenv()
 
@@ -105,7 +113,7 @@ class Agent:
 
         Initializes conversation history, then repeatedly calls the
         LLM and processes tool calls until a final text answer is
-        returned.
+        returned or `MAX_ITERATIONS` is reached.
 
         Args:
             user_prompt: The user's input message to the agent.
@@ -113,6 +121,10 @@ class Agent:
         Returns:
             An AgentResponse containing the final answer, list of
             tool names used, and total iteration count.
+
+        Raises:
+            RuntimeError: If the agent exceeds `MAX_ITERATIONS` without
+                producing a final text answer.
 
         Example:
         ```
@@ -128,7 +140,7 @@ class Agent:
         tools_used: list[str] = []
         iterations = 0
 
-        while True:
+        while iterations < MAX_ITERATIONS:
             iterations += 1
             self.logger.agent.iteration(iterations)
             response = self._call_llm(history, tools)
@@ -138,29 +150,38 @@ class Agent:
 
             self._process_tool_calls(response, history, tools_used)
 
+        self.logger.agent.error(f"Max iterations ({MAX_ITERATIONS}) reached")
+        raise RuntimeError(f"Agent exceeded max iterations: {MAX_ITERATIONS}")
+
     def _init_history(self, user_prompt: str) -> list:
         """Creates the initial conversation history from the user prompt.
+
+        Prepends a system prompt entry before the user message to
+        establish the agent's behavior and context.
 
         Args:
             user_prompt: The user's input message.
 
         Returns:
-            A single-element list containing the user message as a
-            serialized `HistoryEntry` dict.
+            A two-element list containing the system prompt and the
+            user message as serialized HistoryEntry dicts.
 
         Example:
         ```
         self._init_history("Hello")
-        # [{"role": "user", "content": "Hello"}]
+        # [
+        #     {"role": "system", "content": "<SYSTEM_PROMPT>"},
+        #     {"role": "user", "content": "Hello"}
+        # ]
         ```
         """
-        return [HistoryEntry(role="user", content=user_prompt).to_dict()]
+        return [
+            HistoryEntry(role="system", content=SYSTEM_PROMPT).to_dict(),
+            HistoryEntry(role="user", content=user_prompt).to_dict(),
+        ]
 
     def _call_llm(self, history: list, tools: list) -> LLMResponse:
         """Calls the LLM with the current history and tool schema.
-
-        Logs the error via the agent logger and re-raises if the
-        LLM call fails.
 
         Args:
             history: Current conversation history as a list of dicts.
@@ -169,20 +190,13 @@ class Agent:
         Returns:
             An `LLMResponse` containing the model's text and tool calls.
 
-        Raises:
-            Exception: Any exception raised by the LLM client.
-
         Example:
         ```
         response = self._call_llm(history, tools)
         print(response.content)
         ```
         """
-        try:
-            return self.llm.generate(history, tools)
-        except Exception as e:
-            self.logger.agent.error(str(e))
-            raise
+        return self.llm.generate(history, tools)
 
     def _build_assistant_entry(self, response: LLMResponse) -> HistoryEntry:
         """Builds a HistoryEntry representing the assistant's tool call turn.
@@ -258,9 +272,11 @@ class Agent:
         self, response: LLMResponse, tools_used: list, iterations: int
     ) -> AgentResponse:
         """Builds the final `AgentResponse` from the LLM's text answer.
-
-        Logs the final answer and constructs an `AgentResponse` with
-        the answer text, tools used, and iteration count.
+        Attempts to parse the response content as a JSON-encoded
+        `AgentResponse`.
+        If parsing succeeds, logs the final answer and returns a response with
+        the parsed answer.
+        Falls back to using the raw content string if parsing fails.
 
         Args:
             response: The `LLMResponse` containing the final text answer.
@@ -273,15 +289,29 @@ class Agent:
 
         Example:
         ```
+        # With valid JSON content from the LLM:
         result = self._build_response(response, ["calculator"], 2)
         result.answer      # "2 + 2 = 4"
         result.tools_used  # ["calculator"]
         result.iterations  # 2
+
+        # With unparseable content, falls back to raw string:
+        result = self._build_response(response, [], 1)
+        result.answer      # "<raw LLM output>"
         ```
         """
-        self.logger.agent.final_answer(response.content or "")
-        return AgentResponse(
-            answer=response.content or "",
-            tools_used=tools_used,
-            iterations=iterations,
-        )
+        content = response.content or ""
+        try:
+            parsed = AgentResponse.model_validate_json(content)
+            self.logger.agent.final_answer(parsed.answer)
+            return AgentResponse(
+                answer=parsed.answer,
+                tools_used=tools_used,
+                iterations=iterations,
+            )
+        except Exception:
+            return AgentResponse(
+                answer=content,
+                tools_used=tools_used,
+                iterations=iterations,
+            )
